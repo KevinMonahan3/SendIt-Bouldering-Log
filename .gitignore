@@ -1,0 +1,42 @@
+# ----- Python prototype -----
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+prototype/frame_*.jpg
+prototype/frames/
+
+# ----- Flutter / Dart -----
+.dart_tool/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+*.iml
+.idea/
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# ----- Secrets (Supabase keys etc.) -----
+.env
+*.env
+**/secrets.dart
+**/supabase_config.dart
+
+# ----- Test footage and large media -----
+footage/
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.avi
+
+# ----- Editor and OS junk -----
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
