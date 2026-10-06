@@ -1,0 +1,9 @@
+still,colour,h_low,h_high,s_low,v_low,kernel,min_area,true_holds,detected_correct,missed,false_positives,notes
+2026-10-01_suas_lime_greentag_topped_f00024,Lime,0,44,80,50,5,180, 7, 7, 0, 0, Got all holds
+2026-10-01_suas_green_blacktag_fell_2_f00021,Green,39,74,23,1,7,35, 9, 13, 0, 4, Detecting too much of the wall
+2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,97,121,22,0,13,282,10, 3, 7, 0, Cant see the dark blue on the wall
+2026-10-01_suas_orange_greentag_fell_f00019,Orange,0,12,11,66,0,18, 21, 19, 2, 17, Detected most holds but also had a large amount of false postives
+2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,8,36,47,3,7,53, 18, 18, 0, 0, The other holds it detected were other climbs
+
+
+

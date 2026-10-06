@@ -15,6 +15,8 @@ from pathlib import Path
 
 import cv2
 
+STILLS_DIR = Path(__file__).parent.parent / "footage" / "stills"
+
 MAX_WINDOW_HEIGHT = 800
 
 def main():
@@ -67,9 +69,11 @@ def main():
         elif key == ord(" "):
             paused = not paused # toggle for pause
         elif key == ord("s"):
-            out = f"frame_{frame_no:05d}.jpg" # :05d turns whole number to 5 digits so frame 42 turns to frame_00042.jpg
-            cv2.imwrite(out, frame) # Saves the full-size frame
-            print(f"Saved {out}")
+            STILLS_DIR.mkdir(parents=True, exist_ok=True)
+            name = Path(source).stem if source != 0 else "webcam"
+            out = STILLS_DIR / f"{name}_f{frame_no:05d}.jpg"
+            cv2.imwrite(str(out), frame)
+            print(f"Saved {out.name}")
             
         # Stop if the window was closed with the X button
         if cv2.getWindowProperty("SendIt - video test", cv2.WND_PROP_VISIBLE) <1:
