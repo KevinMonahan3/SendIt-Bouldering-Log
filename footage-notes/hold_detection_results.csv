@@ -1,10 +1,13 @@
-still,colour,h_low,h_high,s_low,v_low,kernel,min_area,true_holds,detected_correct,missed,false_positives,notes
-2026-10-01_suas_lime_greentag_topped_f00024,Lime,0,44,80,50,5,180, 7, 7, 0, 0, Got all holds
-2026-10-01_suas_green_blacktag_fell_2_f00021,Green,39,74,23,1,7,35, 9, 13, 0, 4, Detecting too much of the wall
-2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,97,121,22,0,13,282, 10, 3, 7, 0, Cant see the dark blue on the wall
-2026-10-01_suas_orange_greentag_fell_f00019,Orange,0,12,11,66,0,18, 21, 19, 2, 17, Detected most holds but also had a large amount of false postives
-2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,8,36,47,3,7,53, 18, 18, 0, 0, The other holds it detected were other climbs
-2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,28,67,15,81,5,194, 6, 5, 1, 3, Couldn't seperate the top 2 holds and got a lot of background
+still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detected_correct,missed,false_positives,notes
+2026-10-01_suas_lime_greentag_topped_f00024,Lime,0,44,80,50,5,180,,7,7,0,0,Got all holds
+2026-10-01_suas_green_blacktag_fell_2_f00021,Green,39,74,23,1,7,35,,9,9,0,4,Detecting too much of the wall
+2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,97,121,22,0,13,282,,10,3,7,0,Cant see the dark blue on the wall
+2026-10-01_suas_orange_greentag_fell_f00019,Orange,0,12,11,66,0,18,,21,19,2,17,Detected most holds but also had a large amount of false postives
+2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,8,36,47,3,7,53,,18,18,0,5,The other holds it detected were other climbs
+2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,28,62,49,63,3,18,353,6,6,0,1,Got all holds but included a corner too far away to be a hold
+2026-10-01_suas_pink_blacktag,Pink,150,179,80,82,5,71,none,13,13,0,0, Got all holds detected easily
+2026-10-01_suas_red_greentag_fell_f00025,Red,0,17,60,28,3,0,none,19,19,0,8, Got all holds but detected nearby red ones aswell can fix with tapping
+
 
 
 

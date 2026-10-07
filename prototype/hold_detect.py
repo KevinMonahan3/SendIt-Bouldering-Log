@@ -8,9 +8,10 @@ Usage (from the prototype/ folder, with the venv active):
     python hold_detect.py ../footage/stills/2026-10-12_blue_V3_f00041.jpg
  
 Two windows:
-    "SendIt controls"   five sliders, each with its name and a one-line hint right above it.
-                        Drag the white handles. The colour sliders show the colours they
-                        select: bright = kept, dark = removed.
+    "SendIt controls"   six sliders, each with its name above it and a one-line hint below.
+                        Drag the white handles, or use the keyboard (below).
+                        The colour sliders show the colours they select:
+                        bright = kept, dark = removed.
     "SendIt view"       left: your photo with each detected hold outlined and numbered
                         right: the mask (white = pixels inside the colour range)
  
@@ -18,7 +19,11 @@ Mouse in the view window:
     click a hold        shows its H, S, V values; a cyan marker shows where it sits on each slider
     drag                pans the image when zoomed in (Ubuntu); does NOT pick a pixel
  
-Keys (either window):
+Keyboard (either window):
+    Up / Down  or Tab   choose which handle to move (the selected handle turns yellow)
+    Left / Right        move the selected handle by 1
+    a / d               same as Left / Right (if the arrow keys don't work)
+    A / D (with Shift)  move by 10
     p                   print the settings and a ready-to-paste CSV row
     s                   save the result image and mask to results/
     r                   reset the sliders
@@ -29,6 +34,12 @@ from pathlib import Path
  
 import cv2
 import numpy as np
+ 
+# Arrow key codes from cv2.waitKeyEx: (Windows, Linux)
+KEYS_LEFT = {2424832, 65361}
+KEYS_UP = {2490368, 65362}
+KEYS_RIGHT = {2555904, 65363}
+KEYS_DOWN = {2621440, 65364}
  
 CONTROLS_WINDOW = "SendIt controls"
 VIEW_WINDOW = "SendIt view"
@@ -96,13 +107,17 @@ def clean_mask(mask, kernel_size=5):
     return cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel)
  
  
-def find_holds(mask, min_area):
-    """Find the outline of each white blob and keep the ones big enough to be holds.
+def find_holds(mask, min_area, max_area=None):
+    """Find the outline of each white blob and keep the ones that are hold-sized.
  
+    Blobs smaller than min_area are noise; blobs bigger than max_area are usually
+    wall panels or volumes of the same colour. max_area=None means no upper limit.
     Returns (contours, boxes) where each box is (x, y, w, h).
     """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    holds = [c for c in contours if cv2.contourArea(c) >= min_area]
+    holds = [c for c in contours
+             if cv2.contourArea(c) >= min_area
+             and (max_area is None or cv2.contourArea(c) <= max_area)]
     boxes = [cv2.boundingRect(c) for c in holds]
     return holds, boxes
  
@@ -155,7 +170,7 @@ def info_panel(width, lines):
 PANEL_W = 560
 TRACK_X0, TRACK_X1 = 24, PANEL_W - 24   # left/right end of every slider track
 TRACK_H = 22
-ROW_H = 84                              # height of one slider row
+ROW_H = 78                              # height of one slider row
 TOP = 46                                # space for the title
  
 # Each control: label, hint, max value, starting value(s), track style.
@@ -171,13 +186,21 @@ CONTROLS = [
      "hint": "Right = remove specks. Back left if holds merge or footholds vanish"},
     {"key": "size", "label": "5  MIN HOLD SIZE", "max": 100, "start": [5], "style": "plain",
      "hint": "Right = ignore small blobs. Back left if small holds get dropped"},
+    {"key": "maxsize", "label": "6  MAX HOLD SIZE", "max": 100, "start": [100], "style": "plain",
+     "hint": "Left = ignore big blobs (wall panels). Back right if big holds vanish"},
 ]
+MAXSIZE_STEP = 0.001        # one step of the max-size slider = 0.1% of the image
+                            # (all the way right = no limit)
+ 
+# Every handle, in the order Up/Down/Tab move through them: (control index, handle index)
+HANDLES = [(i, h) for i, c in enumerate(CONTROLS) for h in range(len(c["start"]))]
  
  
 class ControlPanel:
     def __init__(self):
         self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
         self.dragging = None            # (control index, handle index) while the mouse is held
+        self.selected = HANDLES[0]      # handle moved by the keyboard
  
     def reset(self):
         self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
@@ -206,7 +229,23 @@ class ControlPanel:
             "v_lo": v["val"][0], "v_hi": v["val"][1],
             "kernel": 2 * clean + 1 if clean > 0 else 0,
             "min_area": v["size"][0] / 10000 * image_area,
+            "max_area": self.max_area(image_area),
         }
+ 
+    def max_area(self, image_area):
+        v = self.values["maxsize"][0]
+        return None if v >= CONTROLS[-1]["max"] else v * MAXSIZE_STEP * image_area
+ 
+    # --- keyboard -----------------------------------------------------------
+    def select_next(self, step):
+        i = HANDLES.index(self.selected)
+        self.selected = HANDLES[(i + step) % len(HANDLES)]
+ 
+    def nudge(self, amount):
+        i, handle = self.selected
+        c = CONTROLS[i]
+        vals = self.values[c["key"]]
+        vals[handle] = min(max(vals[handle] + amount, 0), c["max"])
  
     # --- mouse --------------------------------------------------------------
     def on_mouse(self, event, x, y, flags, param):
@@ -222,6 +261,7 @@ class ControlPanel:
                         if d1 < d0 or (d1 == d0 and x > self.value_to_x(vals[1], c["max"])):
                             handle = 1
                     self.dragging = (i, handle)
+                    self.selected = (i, handle)     # keyboard now moves this handle too
                     self._set(x)
                     break
         elif event == cv2.EVENT_MOUSEMOVE and self.dragging:
@@ -269,11 +309,15 @@ class ControlPanel:
             return f"{vals[0]} - {vals[1]}"
         if c["key"] == "clean":
             return "off" if vals[0] == 0 else f"{vals[0]}  (kernel {2 * vals[0] + 1})"
+        if c["key"] == "maxsize":
+            if vals[0] >= c["max"]:
+                return "no limit"
+            return f"{vals[0] * MAXSIZE_STEP * 100:.1f}% of image = {vals[0] * MAXSIZE_STEP * image_area:.0f} px"
         px = vals[0] / 10000 * image_area
-        return f"{px:.0f} px"
+        return f"{vals[0] / 100:.2f}% of image = {px:.0f} px"
  
     def draw(self, image_area, clicked_hsv=None):
-        height = TOP + ROW_H * len(CONTROLS) + 70
+        height = TOP + ROW_H * len(CONTROLS) + 92
         panel = np.full((height, PANEL_W, 3), PANEL_BG, np.uint8)
         put_text(panel, "Drag the white handles", (TRACK_X0, 28), 0.6, WHITE, 1)
         put_text(panel, "bright = kept   dark = removed", (TRACK_X1, 28), 0.45, GREY, align="right")
@@ -284,16 +328,22 @@ class ControlPanel:
             vals = self.values[c["key"]]
  
             # label (left) and current value (right), hint underneath the track
-            put_text(panel, c["label"], (TRACK_X0, row_top + 20), 0.5, YELLOW, 1)
+            is_selected_row = self.selected[0] == i
+            if is_selected_row:                 # arrow in the margin shows the keyboard row
+                put_text(panel, ">", (6, row_top + 20), 0.5, YELLOW, 2)
+            put_text(panel, c["label"], (TRACK_X0, row_top + 20), 0.5, YELLOW, 2 if is_selected_row else 1)
             put_text(panel, self._value_text(c, image_area), (TRACK_X1, row_top + 20), 0.5, WHITE,
                      align="right")
-            put_text(panel, c["hint"], (TRACK_X0, top + TRACK_H + 20), 0.42, GREY)
+            put_text(panel, c["hint"], (TRACK_X0, top + TRACK_H + 18), 0.42, GREY)
  
             # track: dim the parts that are removed
             track, ramp = self._track_image(c)
             if len(vals) == 2:
                 lo, hi = vals
                 kept = (ramp >= lo) & (ramp <= hi) if lo <= hi else (ramp >= lo) | (ramp <= hi)
+            elif c["key"] == "maxsize":         # max size: blobs up to the handle are kept
+                kept = ramp <= vals[0]
+                track[:, kept] = (200, 200, 200)
             else:
                 kept = ramp <= vals[0]      # plain slider: fill up to the handle
                 track[:, kept] = (200, 200, 200)
@@ -309,10 +359,11 @@ class ControlPanel:
                 pts = np.array([[mx, y], [mx - 6, y + 9], [mx + 6, y + 9]], np.int32)
                 cv2.fillPoly(panel, [pts], CYAN)
  
-            # handles
-            for v in vals:
+            # handles (the one the keyboard moves is yellow)
+            for h, v in enumerate(vals):
                 hx = self.value_to_x(v, c["max"])
-                cv2.rectangle(panel, (hx - 5, top - 6), (hx + 5, top + TRACK_H + 6), WHITE, -1)
+                fill = YELLOW if self.selected == (i, h) else WHITE
+                cv2.rectangle(panel, (hx - 5, top - 6), (hx + 5, top + TRACK_H + 6), fill, -1)
                 cv2.rectangle(panel, (hx - 5, top - 6), (hx + 5, top + TRACK_H + 6), BLACK, 1)
  
         # footer: last click and keys
@@ -323,8 +374,10 @@ class ControlPanel:
         else:
             put_text(panel, "Click a hold in the view window to see where it sits on each slider",
                      (TRACK_X0, y), 0.45, CYAN)
+        put_text(panel, "Up/Down or Tab = pick handle (yellow)   Left/Right or a/d = move 1   A/D = 10",
+                 (TRACK_X0, y + 28), 0.42, GREY)
         put_text(panel, "p = print CSV row    s = save images    r = reset    q = quit",
-                 (TRACK_X0, y + 30), 0.45, GREY)
+                 (TRACK_X0, y + 50), 0.42, GREY)
         return panel
  
  
@@ -348,7 +401,8 @@ def build_view(result, mask, settings, n_holds, clicked):
     info = info_panel(images.shape[1], [
         f"Hue {settings['h_lo']}-{settings['h_hi']}  Sat {settings['s_lo']}-{settings['s_hi']}  "
         f"Bright {settings['v_lo']}-{settings['v_hi']}  Clean-up {settings['kernel']}  "
-        f"Min size {settings['min_area']:.0f}px",
+        f"Size {settings['min_area']:.0f}-"
+        f"{'any' if settings['max_area'] is None else format(settings['max_area'], '.0f')}px",
         "click a hold = show H S V    drag = move around when zoomed in",
     ])
     return np.vstack([images, info])
@@ -430,23 +484,44 @@ def main():
  
         mask = make_mask(hsv, lower, upper)
         mask = clean_mask(mask, s["kernel"])
-        contours, boxes = find_holds(mask, s["min_area"])
+        contours, boxes = find_holds(mask, s["min_area"], s["max_area"])
         result = draw_holds(frame, contours, boxes)
  
         clicked_hsv = clicks.clicked["hsv"] if clicks.clicked else None
         cv2.imshow(CONTROLS_WINDOW, controls.draw(image_area, clicked_hsv))
         cv2.imshow(VIEW_WINDOW, build_view(result, mask, s, len(boxes), clicks.clicked))
  
-        key = cv2.waitKey(30) & 0xFF
+        raw = cv2.waitKeyEx(30)             # full key code, needed for the arrow keys
+        if raw in KEYS_UP:
+            controls.select_next(-1)
+            continue
+        if raw in KEYS_DOWN:
+            controls.select_next(+1)
+            continue
+        if raw in KEYS_LEFT:
+            controls.nudge(-1)
+            continue
+        if raw in KEYS_RIGHT:
+            controls.nudge(+1)
+            continue
+ 
+        key = raw & 0xFF                    # letters: only the last 8 bits matter
         if key in (ord("q"), 27):
             break
+        elif key == 9:                      # Tab
+            controls.select_next(+1)
+        elif key in (ord("a"), ord("d")):
+            controls.nudge(-1 if key == ord("a") else +1)
+        elif key in (ord("A"), ord("D")):
+            controls.nudge(-10 if key == ord("A") else +10)
         elif key == ord("r"):
             controls.reset()
         elif key == ord("p"):
+            max_text = "none" if s["max_area"] is None else str(round(s["max_area"]))
             print(f"lower={lower} upper={upper} kernel={s['kernel']} "
-                  f"min_area={s['min_area']:.0f}px -> {len(boxes)} holds")
+                  f"min_area={s['min_area']:.0f}px max_area={max_text} -> {len(boxes)} holds")
             row = (f"{path.stem},COLOUR,{lower[0]},{upper[0]},{lower[1]},{lower[2]},"
-                   f"{s['kernel']},{round(s['min_area'])},,,,,")
+                   f"{s['kernel']},{round(s['min_area'])},{max_text},,,,,")
             print("CSV row:")
             print(row)
         elif key == ord("s"):
