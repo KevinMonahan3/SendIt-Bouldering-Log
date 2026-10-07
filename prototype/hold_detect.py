@@ -1,99 +1,92 @@
 """
 hold_detect.py - find all climbing holds of one colour on a still frame.
-
+ 
 Issue #10 (SendIt FYP). Classic computer vision, no AI training:
     still frame -> blur -> BGR to HSV -> colour mask -> clean up -> contours -> filter by area -> boxes
-
+ 
 Usage (from the prototype/ folder, with the venv active):
     python hold_detect.py ../footage/stills/2026-10-12_blue_V3_f00041.jpg
-
+ 
 Two windows:
-    "SendIt sliders"       sliders, the hue colour bar (bright part = selected colours)
-                           and a short guide to what each slider does
-    "SendIt view"          left: your photo with each detected hold outlined and numbered
-                           right: the mask (white = pixels inside the colour range)
-
-Controls:
-    click a hold (view)    shows its H, S, V values and marks its hue on the colour bar
-    p                      print the settings and a ready-to-paste CSV row
-    s                      save the result image and mask to results/
-    q or Esc               quit
+    "SendIt controls"   five sliders, each with its name and a one-line hint right above it.
+                        Drag the white handles. The colour sliders show the colours they
+                        select: bright = kept, dark = removed.
+    "SendIt view"       left: your photo with each detected hold outlined and numbered
+                        right: the mask (white = pixels inside the colour range)
+ 
+Mouse in the view window:
+    click a hold        shows its H, S, V values; a cyan marker shows where it sits on each slider
+    drag                pans the image when zoomed in (Ubuntu); does NOT pick a pixel
+ 
+Keys (either window):
+    p                   print the settings and a ready-to-paste CSV row
+    s                   save the result image and mask to results/
+    r                   reset the sliders
+    q or Esc            quit
 """
 import sys
 from pathlib import Path
-
+ 
 import cv2
 import numpy as np
-
-SLIDERS = "SendIt sliders"               # window with the sliders and colour bar
-VIEW = "SendIt view"                     # window with the result and mask
-SLIDER_PANEL_WIDTH = 460
-MAX_WIDTH = 640                        # each of the two images is shrunk to fit this box
+ 
+CONTROLS_WINDOW = "SendIt controls"
+VIEW_WINDOW = "SendIt view"
+MAX_WIDTH = 640                        # the photo is shrunk to fit this box
 MAX_HEIGHT = 560
 RESULTS_DIR = Path(__file__).parent / "results"
-
-# (slider name, max value, starting value)
-# Names are short because Windows cuts off long slider labels.
-TRACKBARS = [
-    ("1 Hue min", 179, 0),             # colour range start
-    ("2 Hue max", 179, 179),           # colour range end (min > max = wraps round, for red)
-    ("3 Sat min", 255, 80),            # how vivid: raise to drop walls/greys/white
-    ("4 Sat max", 255, 255),
-    ("5 Bright min", 255, 50),         # how bright: raise to drop shadows/black
-    ("6 Bright max", 255, 255),
-    ("7 Clean-up", 10, 2),             # morphology kernel = 2 * value + 1 (0 = off)
-    ("8 Min size", 100, 5),            # smallest hold kept, in 0.01% of the image
-]
-
+ 
 # Colours used for drawing (BGR)
 GREEN = (0, 220, 0)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 YELLOW = (0, 255, 255)
+CYAN = (255, 255, 0)
+GREY = (170, 170, 170)
 PANEL_BG = (40, 40, 40)
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
 # The pipeline: small functions, one job each (easy to test and to port to Dart)
 # ---------------------------------------------------------------------------
-
+ 
 def load_frame(path, max_width=MAX_WIDTH, max_height=MAX_HEIGHT):
     """Read an image and shrink it to fit inside max_width x max_height."""
     frame = cv2.imread(str(path))
     if frame is None:
         raise FileNotFoundError(f"Could not read image: {path}")
-
+ 
     h, w = frame.shape[:2]
     scale = min(max_width / w, max_height / h, 1.0)
     if scale < 1.0:
         frame = cv2.resize(frame, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
     return frame
-
-
+ 
+ 
 def to_hsv(frame, blur_size=5):
     """Blur slightly to remove noise, then convert BGR -> HSV."""
     blurred = cv2.GaussianBlur(frame, (blur_size, blur_size), 0)
     return cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-
+ 
+ 
 def make_mask(hsv, lower, upper):
     """White where the pixel is inside the HSV range, black everywhere else.
-
+ 
     If H low > H high the range wraps around the end of the hue circle
     (needed for red, which sits near both 0 and 179).
     """
     h_lo, s_lo, v_lo = lower
     h_hi, s_hi, v_hi = upper
-
+ 
     if h_lo <= h_hi:
         return cv2.inRange(hsv, np.array(lower), np.array(upper))
-
+ 
     # Wrap-around: [h_lo .. 179] OR [0 .. h_hi]
     mask_top = cv2.inRange(hsv, np.array([h_lo, s_lo, v_lo]), np.array([179, s_hi, v_hi]))
     mask_bottom = cv2.inRange(hsv, np.array([0, s_lo, v_lo]), np.array([h_hi, s_hi, v_hi]))
     return cv2.bitwise_or(mask_top, mask_bottom)
-
-
+ 
+ 
 def clean_mask(mask, kernel_size=5):
     """Opening removes small specks; closing fills small holes (e.g. chalk) inside holds."""
     if kernel_size <= 1:
@@ -101,19 +94,19 @@ def clean_mask(mask, kernel_size=5):
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
     opened = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     return cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel)
-
-
+ 
+ 
 def find_holds(mask, min_area):
     """Find the outline of each white blob and keep the ones big enough to be holds.
-
+ 
     Returns (contours, boxes) where each box is (x, y, w, h).
     """
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     holds = [c for c in contours if cv2.contourArea(c) >= min_area]
     boxes = [cv2.boundingRect(c) for c in holds]
     return holds, boxes
-
-
+ 
+ 
 def draw_holds(frame, contours, boxes):
     """Outline each hold and number it, so you can count correct/missed/false positives."""
     out = frame.copy()
@@ -121,12 +114,12 @@ def draw_holds(frame, contours, boxes):
     for i, (x, y, w, h) in enumerate(boxes, start=1):
         put_label(out, str(i), (x, max(y - 4, 12)), scale=0.45)
     return out
-
-
+ 
+ 
 # ---------------------------------------------------------------------------
-# Display helpers (only used by the tuner, not needed in the app)
+# Drawing helpers (only used by the tuner, not needed in the app)
 # ---------------------------------------------------------------------------
-
+ 
 def put_label(img, text, org, scale=0.5, colour=WHITE):
     """Text on a small dark box so it's readable on any background."""
     if not text:
@@ -136,175 +129,319 @@ def put_label(img, text, org, scale=0.5, colour=WHITE):
     x, y = org
     cv2.rectangle(img, (x - 2, y - th - 3), (x + tw + 2, y + baseline), BLACK, -1)
     cv2.putText(img, text, org, font, scale, colour, 1, cv2.LINE_AA)
-
-
-def hue_bar(width, h_lo, h_hi, clicked_h=None, height=26):
-    """A strip showing every hue 0-179; the selected range is bright, the rest dimmed."""
-    hues = np.linspace(0, 179, width).astype(np.uint8)
-    hsv_strip = np.zeros((height, width, 3), np.uint8)
-    hsv_strip[:, :, 0] = hues
-    hsv_strip[:, :, 1] = 255
-    hsv_strip[:, :, 2] = 255
-    bar = cv2.cvtColor(hsv_strip, cv2.COLOR_HSV2BGR)
-
-    if h_lo <= h_hi:
-        selected = (hues >= h_lo) & (hues <= h_hi)
-    else:                                   # wrap-around (red)
-        selected = (hues >= h_lo) | (hues <= h_hi)
-    bar[:, ~selected] = (bar[:, ~selected] * 0.25).astype(np.uint8)
-
-    if clicked_h is not None:               # mark the hue of the last clicked pixel
-        x = int(clicked_h / 179 * (width - 1))
-        cv2.line(bar, (x, 0), (x, height - 1), WHITE, 2)
-    return bar
-
-
-def info_panel(width, lines, height=None):
+ 
+ 
+def put_text(img, text, org, scale=0.5, colour=WHITE, thickness=1, align="left"):
+    """Plain text (for the dark control panel)."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    if align == "right":
+        (tw, _), _ = cv2.getTextSize(text, font, scale, thickness)
+        org = (org[0] - tw, org[1])
+    cv2.putText(img, text, org, font, scale, colour, thickness, cv2.LINE_AA)
+ 
+ 
+def info_panel(width, lines):
     """A dark strip with a few lines of text."""
-    line_h = 20
-    height = height or line_h * len(lines) + 10
-    panel = np.full((height, width, 3), PANEL_BG, np.uint8)
+    panel = np.full((20 * len(lines) + 10, width, 3), PANEL_BG, np.uint8)
     for i, text in enumerate(lines):
-        y = 18 + i * line_h
-        if isinstance(text, tuple):         # (name, description) -> two columns
-            put_label(panel, text[0], (8, y), scale=0.45, colour=YELLOW)
-            put_label(panel, text[1], (120, y), scale=0.45)
-        elif text:                          # skip blank lines
-            put_label(panel, text, (8, y), scale=0.45)
+        put_label(panel, text, (8, 18 + i * 20), scale=0.45)
     return panel
-
-
-def slider_panel(width, settings, clicked):
-    """Image shown under the sliders: the hue colour bar plus a guide to each slider."""
-    h_lo, h_hi = settings["h_lo"], settings["h_hi"]
-    wrap = " (wraps round - red)" if h_lo > h_hi else ""
-    title = info_panel(width, [f"Hue range: {h_lo}-{h_hi}{wrap}"])
-    bar = hue_bar(width, h_lo, h_hi, clicked["hsv"][0] if clicked else None, height=34)
-
-    # Tick marks under the bar so you can read hue values off it
-    ticks = np.full((18, width, 3), PANEL_BG, np.uint8)
-    for hue in range(0, 180, 30):
-        x = int(hue / 179 * (width - 1))
-        cv2.line(ticks, (x, 0), (x, 4), WHITE, 1)
-        put_label(ticks, str(hue), (min(x + 2, width - 26), 15), scale=0.38)
-
-    if clicked is not None:
-        ch, cs, cv = clicked["hsv"]
-        click_text = f"Last click: H={ch}  S={cs}  V={cv}  (white line on bar)"
-    else:
-        click_text = "Click a hold in the view window to see its H S V"
-
-    guide = info_panel(width, [
-        click_text,
-        "",
-        ("1-2 Hue", "which colour - use the bar above"),
-        ("3 Sat min", "raise to remove wall / grey / white"),
-        ("4 Sat max", "leave at 255"),
-        ("5 Bright min", "raise to remove shadows; lower if"),
-        ("", "holds in shadow go missing"),
-        ("6 Bright max", "leave at 255 (lower for glare)"),
-        ("7 Clean-up", "raise to remove specks; lower if"),
-        ("", "holds merge or footholds vanish"),
-        ("8 Min size", f"smallest hold kept ({settings['min_area']:.0f}px now)"),
-    ])
-    return np.vstack([title, bar, ticks, guide])
-
-
+ 
+ 
+# ---------------------------------------------------------------------------
+# The control panel: sliders drawn by us, so each one sits right under its label
+# ---------------------------------------------------------------------------
+ 
+PANEL_W = 560
+TRACK_X0, TRACK_X1 = 24, PANEL_W - 24   # left/right end of every slider track
+TRACK_H = 22
+ROW_H = 84                              # height of one slider row
+TOP = 46                                # space for the title
+ 
+# Each control: label, hint, max value, starting value(s), track style.
+# Two values = a range slider with a min handle and a max handle.
+CONTROLS = [
+    {"key": "hue", "label": "1  COLOUR (hue)", "max": 179, "start": [0, 179], "style": "hue",
+     "hint": "Put the two handles around your route's colour"},
+    {"key": "sat", "label": "2  VIVIDNESS (saturation)", "max": 255, "start": [80, 255], "style": "sat",
+     "hint": "Drag the left handle right to remove wall / grey / white"},
+    {"key": "val", "label": "3  BRIGHTNESS (value)", "max": 255, "start": [50, 255], "style": "val",
+     "hint": "Left handle right = remove shadows. Back left if dark holds vanish"},
+    {"key": "clean", "label": "4  CLEAN-UP", "max": 10, "start": [2], "style": "plain",
+     "hint": "Right = remove specks. Back left if holds merge or footholds vanish"},
+    {"key": "size", "label": "5  MIN HOLD SIZE", "max": 100, "start": [5], "style": "plain",
+     "hint": "Right = ignore small blobs. Back left if small holds get dropped"},
+]
+ 
+ 
+class ControlPanel:
+    def __init__(self):
+        self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
+        self.dragging = None            # (control index, handle index) while the mouse is held
+ 
+    def reset(self):
+        self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
+ 
+    # --- geometry -----------------------------------------------------------
+    @staticmethod
+    def track_top(i):
+        return TOP + i * ROW_H + 30
+ 
+    @staticmethod
+    def value_to_x(value, max_value):
+        return int(TRACK_X0 + value / max_value * (TRACK_X1 - TRACK_X0))
+ 
+    @staticmethod
+    def x_to_value(x, max_value):
+        x = min(max(x, TRACK_X0), TRACK_X1)
+        return round((x - TRACK_X0) / (TRACK_X1 - TRACK_X0) * max_value)
+ 
+    # --- settings used by the pipeline --------------------------------------
+    def settings(self, image_area):
+        v = self.values
+        clean = v["clean"][0]
+        return {
+            "h_lo": v["hue"][0], "h_hi": v["hue"][1],
+            "s_lo": v["sat"][0], "s_hi": v["sat"][1],
+            "v_lo": v["val"][0], "v_hi": v["val"][1],
+            "kernel": 2 * clean + 1 if clean > 0 else 0,
+            "min_area": v["size"][0] / 10000 * image_area,
+        }
+ 
+    # --- mouse --------------------------------------------------------------
+    def on_mouse(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            for i, c in enumerate(CONTROLS):
+                top = self.track_top(i)
+                if top - 16 <= y <= top + TRACK_H + 16 and TRACK_X0 - 14 <= x <= TRACK_X1 + 14:
+                    vals = self.values[c["key"]]
+                    handle = 0
+                    if len(vals) == 2:      # pick the handle nearest the click
+                        d0 = abs(self.value_to_x(vals[0], c["max"]) - x)
+                        d1 = abs(self.value_to_x(vals[1], c["max"]) - x)
+                        if d1 < d0 or (d1 == d0 and x > self.value_to_x(vals[1], c["max"])):
+                            handle = 1
+                    self.dragging = (i, handle)
+                    self._set(x)
+                    break
+        elif event == cv2.EVENT_MOUSEMOVE and self.dragging:
+            if flags & cv2.EVENT_FLAG_LBUTTON:
+                self._set(x)
+            else:                           # button was released outside the window
+                self.dragging = None
+        elif event == cv2.EVENT_LBUTTONUP:
+            self.dragging = None
+ 
+    def _set(self, x):
+        i, handle = self.dragging
+        c = CONTROLS[i]
+        self.values[c["key"]][handle] = self.x_to_value(x, c["max"])
+ 
+    # --- drawing ------------------------------------------------------------
+    def _hue_centre(self):
+        lo, hi = self.values["hue"]
+        if lo <= hi:
+            return (lo + hi) // 2
+        return ((lo + hi + 180) // 2) % 180   # middle of a wrapped (red) range
+ 
+    def _track_image(self, c):
+        """The coloured background of a slider track."""
+        n = TRACK_X1 - TRACK_X0 + 1
+        ramp = np.linspace(0, c["max"], n)
+        hsv = np.zeros((TRACK_H, n, 3), np.uint8)
+        hc = self._hue_centre()
+        if c["style"] == "hue":
+            hsv[..., 0], hsv[..., 1], hsv[..., 2] = ramp, 255, 255
+        elif c["style"] == "sat":
+            hsv[..., 0], hsv[..., 1], hsv[..., 2] = hc, ramp, 230
+        elif c["style"] == "val":
+            hsv[..., 0], hsv[..., 1], hsv[..., 2] = hc, 200, ramp
+        else:
+            return np.full((TRACK_H, n, 3), (90, 90, 90), np.uint8), ramp
+        return cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR), ramp
+ 
+    def _value_text(self, c, image_area):
+        vals = self.values[c["key"]]
+        if c["key"] == "hue":
+            text = f"{vals[0]} - {vals[1]}"
+            return text + "  (wraps round = red)" if vals[0] > vals[1] else text
+        if c["key"] in ("sat", "val"):
+            return f"{vals[0]} - {vals[1]}"
+        if c["key"] == "clean":
+            return "off" if vals[0] == 0 else f"{vals[0]}  (kernel {2 * vals[0] + 1})"
+        px = vals[0] / 10000 * image_area
+        return f"{px:.0f} px"
+ 
+    def draw(self, image_area, clicked_hsv=None):
+        height = TOP + ROW_H * len(CONTROLS) + 70
+        panel = np.full((height, PANEL_W, 3), PANEL_BG, np.uint8)
+        put_text(panel, "Drag the white handles", (TRACK_X0, 28), 0.6, WHITE, 1)
+        put_text(panel, "bright = kept   dark = removed", (TRACK_X1, 28), 0.45, GREY, align="right")
+ 
+        for i, c in enumerate(CONTROLS):
+            row_top = TOP + i * ROW_H
+            top = self.track_top(i)
+            vals = self.values[c["key"]]
+ 
+            # label (left) and current value (right), hint underneath the track
+            put_text(panel, c["label"], (TRACK_X0, row_top + 20), 0.5, YELLOW, 1)
+            put_text(panel, self._value_text(c, image_area), (TRACK_X1, row_top + 20), 0.5, WHITE,
+                     align="right")
+            put_text(panel, c["hint"], (TRACK_X0, top + TRACK_H + 20), 0.42, GREY)
+ 
+            # track: dim the parts that are removed
+            track, ramp = self._track_image(c)
+            if len(vals) == 2:
+                lo, hi = vals
+                kept = (ramp >= lo) & (ramp <= hi) if lo <= hi else (ramp >= lo) | (ramp <= hi)
+            else:
+                kept = ramp <= vals[0]      # plain slider: fill up to the handle
+                track[:, kept] = (200, 200, 200)
+            track[:, ~kept] = (track[:, ~kept] * 0.3).astype(np.uint8)
+            panel[top:top + TRACK_H, TRACK_X0:TRACK_X1 + 1] = track
+            cv2.rectangle(panel, (TRACK_X0 - 1, top - 1), (TRACK_X1 + 1, top + TRACK_H), (90, 90, 90), 1)
+ 
+            # cyan marker: where the last clicked pixel sits on this slider
+            if clicked_hsv is not None and c["style"] in ("hue", "sat", "val"):
+                value = clicked_hsv[("hue", "sat", "val").index(c["style"])]
+                mx = self.value_to_x(value, c["max"])
+                y = top + TRACK_H + 2
+                pts = np.array([[mx, y], [mx - 6, y + 9], [mx + 6, y + 9]], np.int32)
+                cv2.fillPoly(panel, [pts], CYAN)
+ 
+            # handles
+            for v in vals:
+                hx = self.value_to_x(v, c["max"])
+                cv2.rectangle(panel, (hx - 5, top - 6), (hx + 5, top + TRACK_H + 6), WHITE, -1)
+                cv2.rectangle(panel, (hx - 5, top - 6), (hx + 5, top + TRACK_H + 6), BLACK, 1)
+ 
+        # footer: last click and keys
+        y = TOP + ROW_H * len(CONTROLS) + 18
+        if clicked_hsv is not None:
+            h, s, v = clicked_hsv
+            put_text(panel, f"Last click: H={h}  S={s}  V={v}   (cyan markers)", (TRACK_X0, y), 0.5, CYAN)
+        else:
+            put_text(panel, "Click a hold in the view window to see where it sits on each slider",
+                     (TRACK_X0, y), 0.45, CYAN)
+        put_text(panel, "p = print CSV row    s = save images    r = reset    q = quit",
+                 (TRACK_X0, y + 30), 0.45, GREY)
+        return panel
+ 
+ 
+# ---------------------------------------------------------------------------
+# The view window: result and mask side by side
+# ---------------------------------------------------------------------------
+ 
 def build_view(result, mask, settings, n_holds, clicked):
-    """Main view: [result | mask] side by side, with a short info strip underneath."""
     h, w = result.shape[:2]
     left = result.copy()
     right = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
     put_label(left, f"RESULT: {n_holds} holds", (8, 22), scale=0.6, colour=YELLOW)
     put_label(right, "MASK (white = in range)", (8, 22), scale=0.6, colour=YELLOW)
-
+ 
     if clicked is not None:                 # small cross where you clicked
         cx, cy = clicked["xy"]
-        cv2.drawMarker(left, (cx, cy), YELLOW, cv2.MARKER_CROSS, 14, 2)
-
+        cv2.drawMarker(left, (cx, cy), CYAN, cv2.MARKER_CROSS, 14, 2)
+        cv2.drawMarker(right, (cx, cy), CYAN, cv2.MARKER_CROSS, 14, 2)
+ 
     images = np.hstack([left, np.full((h, 6, 3), PANEL_BG, np.uint8), right])
     info = info_panel(images.shape[1], [
         f"Hue {settings['h_lo']}-{settings['h_hi']}  Sat {settings['s_lo']}-{settings['s_hi']}  "
         f"Bright {settings['v_lo']}-{settings['v_hi']}  Clean-up {settings['kernel']}  "
         f"Min size {settings['min_area']:.0f}px",
-        "click a hold = H S V    p = print CSV row    s = save    q = quit",
+        "click a hold = show H S V    drag = move around when zoomed in",
     ])
     return np.vstack([images, info])
-
-
+ 
+ 
+class ViewClicks:
+    """Tell a click (sample the pixel) apart from a drag (pan when zoomed in).
+ 
+    The pixel is only sampled when the button is released and the mouse barely moved,
+    so dragging to pan never picks a new colour.
+    """
+    MAX_MOVES = 3                           # mouse-move events allowed during a click
+    MAX_DISTANCE = 5                        # pixels
+ 
+    def __init__(self, hsv, img_w, img_h, gap=6):
+        self.hsv, self.img_w, self.img_h, self.gap = hsv, img_w, img_h, gap
+        self.press = None
+        self.clicked = None
+ 
+    def on_mouse(self, event, x, y, flags, param):
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.press = {"xy": (x, y), "moves": 0}
+        elif event == cv2.EVENT_MOUSEMOVE and self.press and flags & cv2.EVENT_FLAG_LBUTTON:
+            self.press["moves"] += 1
+        elif event == cv2.EVENT_LBUTTONUP and self.press:
+            px, py = self.press["xy"]
+            still = (self.press["moves"] <= self.MAX_MOVES
+                     and abs(x - px) <= self.MAX_DISTANCE and abs(y - py) <= self.MAX_DISTANCE)
+            self.press = None
+            if still:
+                self._sample(x, y)
+ 
+    def _sample(self, x, y):
+        if x >= self.img_w + self.gap:      # clicked on the mask side: same pixel
+            x -= self.img_w + self.gap
+        if 0 <= x < self.img_w and 0 <= y < self.img_h:
+            h, s, v = (int(n) for n in self.hsv[y, x])
+            self.clicked = {"xy": (x, y), "hsv": (h, s, v)}
+            print(f"Clicked ({x}, {y}) -> H={h} S={s} V={v}")
+ 
+ 
 # ---------------------------------------------------------------------------
-# The interactive tuner: two windows
-#   "SendIt sliders" - the sliders, colour bar and a guide to each slider
-#   "SendIt view"    - result and mask side by side (click holds here)
+# Main loop
 # ---------------------------------------------------------------------------
-
-def create_windows(view_x):
-    cv2.namedWindow(SLIDERS, cv2.WINDOW_AUTOSIZE)
-    for name, max_val, start in TRACKBARS:
-        cv2.createTrackbar(name, SLIDERS, start, max_val, lambda v: None)
-    cv2.namedWindow(VIEW, cv2.WINDOW_AUTOSIZE)
-    cv2.moveWindow(SLIDERS, 0, 0)
-    cv2.moveWindow(VIEW, view_x, 0)
-
-
-def read_settings(image_area):
-    v = {name: cv2.getTrackbarPos(name, SLIDERS) for name, _, _ in TRACKBARS}
-    return {
-        "h_lo": v["1 Hue min"], "h_hi": v["2 Hue max"],
-        "s_lo": v["3 Sat min"], "s_hi": v["4 Sat max"],
-        "v_lo": v["5 Bright min"], "v_hi": v["6 Bright max"],
-        "kernel": 2 * v["7 Clean-up"] + 1 if v["7 Clean-up"] > 0 else 0,
-        "min_area": v["8 Min size"] / 10000 * image_area,
-    }
-
-
+ 
 def window_closed(name):
     try:
         return cv2.getWindowProperty(name, cv2.WND_PROP_VISIBLE) < 1
     except cv2.error:
         return True
-
-
+ 
+ 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python hold_detect.py <path to still image>")
         sys.exit(1)
-
+ 
     path = Path(sys.argv[1])
     frame = load_frame(path)
     hsv = to_hsv(frame)
     img_h, img_w = frame.shape[:2]
     image_area = img_h * img_w
     print(f"Loaded {path.name}: {img_w}x{img_h} after resizing")
-
-    state = {"clicked": None}
-
-    def on_click(event, x, y, flags, param):
-        # Only clicks on the left image (the photo) count
-        if event == cv2.EVENT_LBUTTONDOWN and x < img_w and y < img_h:
-            h, s, v = (int(n) for n in hsv[y, x])
-            state["clicked"] = {"xy": (x, y), "hsv": (h, s, v)}
-            print(f"Clicked ({x}, {y}) -> H={h} S={s} V={v}")
-
-    create_windows(view_x=SLIDER_PANEL_WIDTH + 30)
-    cv2.setMouseCallback(VIEW, on_click)
-
+ 
+    controls = ControlPanel()
+    clicks = ViewClicks(hsv, img_w, img_h)
+ 
+    cv2.namedWindow(CONTROLS_WINDOW, cv2.WINDOW_AUTOSIZE | cv2.WINDOW_GUI_NORMAL)
+    cv2.namedWindow(VIEW_WINDOW, cv2.WINDOW_AUTOSIZE)
+    cv2.moveWindow(CONTROLS_WINDOW, 0, 0)
+    cv2.moveWindow(VIEW_WINDOW, PANEL_W + 30, 0)
+    cv2.setMouseCallback(CONTROLS_WINDOW, controls.on_mouse)
+    cv2.setMouseCallback(VIEW_WINDOW, clicks.on_mouse)
+ 
     while True:
-        s = read_settings(image_area)
+        s = controls.settings(image_area)
         lower = (s["h_lo"], s["s_lo"], s["v_lo"])
         upper = (s["h_hi"], s["s_hi"], s["v_hi"])
-
+ 
         mask = make_mask(hsv, lower, upper)
         mask = clean_mask(mask, s["kernel"])
         contours, boxes = find_holds(mask, s["min_area"])
         result = draw_holds(frame, contours, boxes)
-
-        cv2.imshow(SLIDERS, slider_panel(SLIDER_PANEL_WIDTH, s, state["clicked"]))
-        cv2.imshow(VIEW, build_view(result, mask, s, len(boxes), state["clicked"]))
-
+ 
+        clicked_hsv = clicks.clicked["hsv"] if clicks.clicked else None
+        cv2.imshow(CONTROLS_WINDOW, controls.draw(image_area, clicked_hsv))
+        cv2.imshow(VIEW_WINDOW, build_view(result, mask, s, len(boxes), clicks.clicked))
+ 
         key = cv2.waitKey(30) & 0xFF
         if key in (ord("q"), 27):
             break
+        elif key == ord("r"):
+            controls.reset()
         elif key == ord("p"):
             print(f"lower={lower} upper={upper} kernel={s['kernel']} "
                   f"min_area={s['min_area']:.0f}px -> {len(boxes)} holds")
@@ -317,13 +454,14 @@ def main():
             cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_result.jpg"), result)
             cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_mask.jpg"), mask)
             print(f"Saved to {RESULTS_DIR}")
-
+ 
         # Stop if either window was closed with the X button
-        if window_closed(VIEW) or window_closed(SLIDERS):
+        if window_closed(VIEW_WINDOW) or window_closed(CONTROLS_WINDOW):
             break
-
+ 
     cv2.destroyAllWindows()
-
-
+ 
+ 
 if __name__ == "__main__":
     main()
+ 
