@@ -7,6 +7,11 @@ still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detect
 2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,28,62,49,63,3,18,353,6,6,0,1,Got all holds but included a corner too far away to be a hold
 2026-10-01_suas_pink_blacktag,Pink,150,179,80,82,5,71,none,13,13,0,0, Got all holds detected easily
 2026-10-01_suas_red_greentag_fell_f00025,Red,0,17,60,28,3,0,none,19,19,0,8, Got all holds but detected nearby red ones aswell can fix with tapping
+2026-10-01_suas_purple_greentag_fell_f01168,Purple,138,168,17,0,0,0,none,24,14,10,0, Struggled with holds in the cave/shadow
+2026-10-01_suas_white_goldtag_fell_2_f00013,White,40,68,0,63,0,53,none,15,3,12,5, Struggled against white on white wall as well as white in the cave/dirty holds
+2026-10-01_suas_yellow_blacktag_topped_f00015,Yellow,22,40,40,38,7,0,706,18,18,0,0, Adjusted max hold size and worked perfect
+
+
 
 
 
