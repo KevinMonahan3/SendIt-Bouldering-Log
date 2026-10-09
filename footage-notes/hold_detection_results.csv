@@ -1,15 +1,21 @@
-still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detected_correct,missed,false_positives,notes
-2026-10-01_suas_lime_greentag_topped_f00024,Lime,0,44,80,50,5,180,,7,7,0,0,Got all holds
-2026-10-01_suas_green_blacktag_fell_2_f00021,Green,39,74,23,1,7,35,,9,9,0,4,Detecting too much of the wall
-2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,97,121,22,0,13,282,,10,3,7,0,Cant see the dark blue on the wall
-2026-10-01_suas_orange_greentag_fell_f00019,Orange,0,12,11,66,0,18,,21,19,2,17,Detected most holds but also had a large amount of false postives
-2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,8,36,47,3,7,53,,18,18,0,5,The other holds it detected were other climbs
-2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,28,62,49,63,3,18,353,6,6,0,1,Got all holds but included a corner too far away to be a hold
-2026-10-01_suas_pink_blacktag,Pink,150,179,80,82,5,71,none,13,13,0,0, Got all holds detected easily
-2026-10-01_suas_red_greentag_fell_f00025,Red,0,17,60,28,3,0,none,19,19,0,8, Got all holds but detected nearby red ones aswell can fix with tapping
-2026-10-01_suas_purple_greentag_fell_f01168,Purple,138,168,17,0,0,0,none,24,14,10,0, Struggled with holds in the cave/shadow
-2026-10-01_suas_white_goldtag_fell_2_f00013,White,40,68,0,63,0,53,none,15,3,12,5, Struggled against white on white wall as well as white in the cave/dirty holds
-2026-10-01_suas_yellow_blacktag_topped_f00015,Yellow,22,40,40,38,7,0,706,18,18,0,0, Adjusted max hold size and worked perfect
+still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detected_correct,missed,false_positives,Method,notes
+2026-10-01_suas_lime_greentag_topped_f00024,Lime,0,44,80,50,5,180,,7,7,0,0,Manual,Got all holds
+2026-10-01_suas_green_blacktag_fell_2_f00021,Green,39,74,23,1,7,35,,9,9,0,4,Manual,Detecting too much of the wall
+2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,97,121,22,0,13,282,,10,3,7,0,Manual,Cant see the dark blue on the wall
+2026-10-01_suas_orange_greentag_fell_f00019,Orange,0,12,11,66,0,18,,21,19,2,17,Manual,Detected most holds but also had a large amount of false postives
+2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,8,36,47,3,7,53,,18,18,0,5,Manual,The other holds it detected were other climbs
+2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,28,62,49,63,3,18,353,6,6,0,1,Manual,Got all holds but included a corner too far away to be a hold
+2026-10-01_suas_pink_blacktag,Pink,150,179,80,82,5,71,none,13,13,0,0,Manual,Got all holds detected easily
+2026-10-01_suas_red_greentag_fell_f00025,Red,0,17,60,28,3,0,none,19,19,0,8,Manual,Got all holds but detected nearby red ones aswell can fix with tapping
+2026-10-01_suas_purple_greentag_fell_f01168,Purple,138,168,17,0,0,0,none,24,14,10,0,Manual,Struggled with holds in the cave/shadow
+2026-10-01_suas_white_goldtag_fell_2_f00013,White,40,68,0,63,0,53,none,15,3,12,5,Manual,Struggled against white on white wall as well as white in the cave/dirty holds
+2026-10-01_suas_yellow_blacktag_topped_f00015,Yellow,22,40,40,38,7,0,706,18,18,0,0,Manual,Adjusted max hold size and worked perfect
+2026-10-01_suas_lime_greentag_topped_f00024,Lime,23,43,34,40,5,176,none,7,7,0,0,tap-to-sample (hue +/-10), Got all holds instantly clicking any hold did not matter small footholds not showing up but they are too small to notice
+2026-10-01_suas_green_blacktag_fell_2_f00021,Green,45,65,0,7,7,35,176,9,8,1,2,tap-to-sample (hue +/-10), missed a few holds and was detecting spots on the wall as holds
+2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,100,120,26,47,7,35,none,10,6,4,0,tap-to-sample (hue +/-10), I adjusted the kernel and min size as I may have set wrong in first test but was able to detect more holds then before but still missing some key holds
+
+
+
 
 
 
