@@ -17,6 +17,7 @@ Two windows:
  
 Mouse in the view window:
     click a hold        shows its H, S, V values; a cyan marker shows where it sits on each slider
+                        (in TAP MODE the click also sets the colour sliders for you - issue #11)
     drag                pans the image when zoomed in (Ubuntu); does NOT pick a pixel
  
 Keyboard (either window):
@@ -24,6 +25,8 @@ Keyboard (either window):
     Left / Right        move the selected handle by 1
     a / d               same as Left / Right (if the arrow keys don't work)
     A / D (with Shift)  move by 10
+    t                   TAP MODE on/off: click one hold and the colour range is built from it
+    [ / ]               in tap mode: narrower / wider hue tolerance (re-applies the last tap)
     p                   print the settings and a ready-to-paste CSV row
     s                   save the result image and mask to results/
     r                   reset the sliders
@@ -46,6 +49,12 @@ VIEW_WINDOW = "SendIt view"
 MAX_WIDTH = 640                        # the photo is shrunk to fit this box
 MAX_HEIGHT = 560
 RESULTS_DIR = Path(__file__).parent / "results"
+ 
+# Tap-to-sample (issue #11)
+TAP_PATCH = 7                          # sample a 7x7 square around the click
+TAP_H_TOL = 10                         # hue range = sampled hue +/- this
+TAP_S_TOL = 60                         # vividness: keep pixels down to sampled S - this
+TAP_V_TOL = 80                         # brightness: keep pixels down to sampled V - this
  
 # Colours used for drawing (BGR)
 GREEN = (0, 220, 0)
@@ -98,6 +107,41 @@ def make_mask(hsv, lower, upper):
     return cv2.bitwise_or(mask_top, mask_bottom)
  
  
+def sample_patch(hsv, x, y, size=TAP_PATCH):
+    """Average HSV colour of a small square around (x, y).
+ 
+    One pixel can be chalk, a shadow or the edge of the hold, so a small patch
+    gives a more reliable colour. Hue is an angle on a circle (179 sits next to 0),
+    so it is averaged as an angle; otherwise red at 2 and 178 would average to 90 (green).
+    S and V use the median, which ignores the odd very light or dark pixel.
+    """
+    half = size // 2
+    img_h, img_w = hsv.shape[:2]
+    patch = hsv[max(y - half, 0):min(y + half + 1, img_h),
+                max(x - half, 0):min(x + half + 1, img_w)].reshape(-1, 3)
+ 
+    angles = patch[:, 0].astype(np.float64) * 2 * np.pi / 180      # 0-179 -> 0-2pi
+    mean_angle = np.arctan2(np.sin(angles).mean(), np.cos(angles).mean())
+    h = int(round(mean_angle * 180 / (2 * np.pi))) % 180
+    s = int(np.median(patch[:, 1]))
+    v = int(np.median(patch[:, 2]))
+    return h, s, v
+ 
+ 
+def range_from_sample(h, s, v, h_tol=TAP_H_TOL, s_tol=TAP_S_TOL, v_tol=TAP_V_TOL):
+    """Build the HSV range around a sampled colour.
+ 
+    Hue: sampled hue +/- h_tol. It wraps round (% 180): a red sample at H=5 gives
+    175 -> 15, which make_mask already handles as a wrap-around range.
+    S and V: only a lower limit. Shadow and distance make parts of a hold duller and
+    darker than the tapped spot, but never more vivid, so the upper limit stays 255.
+    (A symmetric +/- range cut off the most vivid parts of holds in testing.)
+    """
+    lower = ((h - h_tol) % 180, max(s - s_tol, 0), max(v - v_tol, 0))
+    upper = ((h + h_tol) % 180, 255, 255)
+    return lower, upper
+ 
+ 
 def clean_mask(mask, kernel_size=5):
     """Opening removes small specks; closing fills small holes (e.g. chalk) inside holds."""
     if kernel_size <= 1:
@@ -132,7 +176,7 @@ def draw_holds(frame, contours, boxes):
  
  
 # ---------------------------------------------------------------------------
-# Drawing helpers (only used by the tuner, not needed in the app)
+# Drawing helpers (only used by the tuner)
 # ---------------------------------------------------------------------------
  
 def put_label(img, text, org, scale=0.5, colour=WHITE):
@@ -201,9 +245,18 @@ class ControlPanel:
         self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
         self.dragging = None            # (control index, handle index) while the mouse is held
         self.selected = HANDLES[0]      # handle moved by the keyboard
+        self.source = "manual"          # "manual" or "tap" - goes into the CSV notes
  
     def reset(self):
         self.values = {c["key"]: list(c["start"]) for c in CONTROLS}
+        self.source = "manual"
+ 
+    def apply_range(self, lower, upper):
+        """Move the colour handles to a range built by tap-to-sample."""
+        self.values["hue"] = [lower[0], upper[0]]
+        self.values["sat"] = [lower[1], upper[1]]
+        self.values["val"] = [lower[2], upper[2]]
+        self.source = "tap"
  
     # --- geometry -----------------------------------------------------------
     @staticmethod
@@ -246,6 +299,8 @@ class ControlPanel:
         c = CONTROLS[i]
         vals = self.values[c["key"]]
         vals[handle] = min(max(vals[handle] + amount, 0), c["max"])
+        if c["style"] in ("hue", "sat", "val"):
+            self.source = "manual"      # tap range was changed by hand
  
     # --- mouse --------------------------------------------------------------
     def on_mouse(self, event, x, y, flags, param):
@@ -276,6 +331,8 @@ class ControlPanel:
         i, handle = self.dragging
         c = CONTROLS[i]
         self.values[c["key"]][handle] = self.x_to_value(x, c["max"])
+        if c["style"] in ("hue", "sat", "val"):
+            self.source = "manual"      # tap range was changed by hand
  
     # --- drawing ------------------------------------------------------------
     def _hue_centre(self):
@@ -316,11 +373,15 @@ class ControlPanel:
         px = vals[0] / 10000 * image_area
         return f"{vals[0] / 100:.2f}% of image = {px:.0f} px"
  
-    def draw(self, image_area, clicked_hsv=None):
+    def draw(self, image_area, clicked_hsv=None, tap_mode=False):
         height = TOP + ROW_H * len(CONTROLS) + 92
         panel = np.full((height, PANEL_W, 3), PANEL_BG, np.uint8)
-        put_text(panel, "Drag the white handles", (TRACK_X0, 28), 0.6, WHITE, 1)
-        put_text(panel, "bright = kept   dark = removed", (TRACK_X1, 28), 0.45, GREY, align="right")
+        if tap_mode:
+            cv2.rectangle(panel, (0, 0), (PANEL_W, TOP - 8), (0, 90, 120), -1)
+            put_text(panel, "TAP MODE: click a hold in the view window", (TRACK_X0, 28), 0.6, YELLOW, 2)
+        else:
+            put_text(panel, "Drag the white handles", (TRACK_X0, 28), 0.6, WHITE, 1)
+            put_text(panel, "bright = kept   dark = removed", (TRACK_X1, 28), 0.45, GREY, align="right")
  
         for i, c in enumerate(CONTROLS):
             row_top = TOP + i * ROW_H
@@ -370,13 +431,14 @@ class ControlPanel:
         y = TOP + ROW_H * len(CONTROLS) + 18
         if clicked_hsv is not None:
             h, s, v = clicked_hsv
-            put_text(panel, f"Last click: H={h}  S={s}  V={v}   (cyan markers)", (TRACK_X0, y), 0.5, CYAN)
+            what = "Tap sample" if self.source == "tap" else "Last click"
+            put_text(panel, f"{what}: H={h}  S={s}  V={v}   (cyan markers)", (TRACK_X0, y), 0.5, CYAN)
         else:
             put_text(panel, "Click a hold in the view window to see where it sits on each slider",
                      (TRACK_X0, y), 0.45, CYAN)
         put_text(panel, "Up/Down or Tab = pick handle (yellow)   Left/Right or a/d = move 1   A/D = 10",
                  (TRACK_X0, y + 28), 0.42, GREY)
-        put_text(panel, "p = print CSV row    s = save images    r = reset    q = quit",
+        put_text(panel, "t = tap mode   [ ] = tap hue +/-   p = CSV row   s = save   r = reset   q = quit",
                  (TRACK_X0, y + 50), 0.42, GREY)
         return panel
  
@@ -385,7 +447,7 @@ class ControlPanel:
 # The view window: result and mask side by side
 # ---------------------------------------------------------------------------
  
-def build_view(result, mask, settings, n_holds, clicked):
+def build_view(result, mask, settings, n_holds, clicked, tap_mode=False):
     h, w = result.shape[:2]
     left = result.copy()
     right = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
@@ -396,6 +458,9 @@ def build_view(result, mask, settings, n_holds, clicked):
         cx, cy = clicked["xy"]
         cv2.drawMarker(left, (cx, cy), CYAN, cv2.MARKER_CROSS, 14, 2)
         cv2.drawMarker(right, (cx, cy), CYAN, cv2.MARKER_CROSS, 14, 2)
+        if clicked.get("patch"):            # the square that was averaged
+            half = TAP_PATCH // 2
+            cv2.rectangle(left, (cx - half, cy - half), (cx + half, cy + half), CYAN, 1)
  
     images = np.hstack([left, np.full((h, 6, 3), PANEL_BG, np.uint8), right])
     info = info_panel(images.shape[1], [
@@ -403,7 +468,8 @@ def build_view(result, mask, settings, n_holds, clicked):
         f"Bright {settings['v_lo']}-{settings['v_hi']}  Clean-up {settings['kernel']}  "
         f"Size {settings['min_area']:.0f}-"
         f"{'any' if settings['max_area'] is None else format(settings['max_area'], '.0f')}px",
-        "click a hold = show H S V    drag = move around when zoomed in",
+        ("TAP MODE ON: click one hold to set the colour   (t = off)" if tap_mode
+         else "click a hold = show H S V    t = tap mode    drag = move when zoomed in"),
     ])
     return np.vstack([images, info])
  
@@ -421,6 +487,7 @@ class ViewClicks:
         self.hsv, self.img_w, self.img_h, self.gap = hsv, img_w, img_h, gap
         self.press = None
         self.clicked = None
+        self.new_click = False              # main loop checks this for tap mode
  
     def on_mouse(self, event, x, y, flags, param):
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -441,6 +508,7 @@ class ViewClicks:
         if 0 <= x < self.img_w and 0 <= y < self.img_h:
             h, s, v = (int(n) for n in self.hsv[y, x])
             self.clicked = {"xy": (x, y), "hsv": (h, s, v)}
+            self.new_click = True
             print(f"Clicked ({x}, {y}) -> H={h} S={s} V={v}")
  
  
@@ -477,7 +545,27 @@ def main():
     cv2.setMouseCallback(CONTROLS_WINDOW, controls.on_mouse)
     cv2.setMouseCallback(VIEW_WINDOW, clicks.on_mouse)
  
+    tap_mode = False
+    h_tol = TAP_H_TOL
+    last_tap = None                         # sampled (h, s, v) of the last tap
+ 
+    def apply_tap():
+        lower, upper = range_from_sample(*last_tap, h_tol=h_tol)
+        controls.apply_range(lower, upper)
+        print(f"Tap sample H={last_tap[0]} S={last_tap[1]} V={last_tap[2]} "
+              f"-> lower={lower} upper={upper} (hue +/-{h_tol})")
+ 
     while True:
+        # Tap-to-sample: a new click in tap mode builds the colour range from that hold
+        if clicks.new_click:
+            clicks.new_click = False
+            if tap_mode:
+                x, y = clicks.clicked["xy"]
+                last_tap = sample_patch(hsv, x, y)
+                clicks.clicked["hsv"] = last_tap
+                clicks.clicked["patch"] = True
+                apply_tap()
+ 
         s = controls.settings(image_area)
         lower = (s["h_lo"], s["s_lo"], s["v_lo"])
         upper = (s["h_hi"], s["s_hi"], s["v_hi"])
@@ -488,8 +576,8 @@ def main():
         result = draw_holds(frame, contours, boxes)
  
         clicked_hsv = clicks.clicked["hsv"] if clicks.clicked else None
-        cv2.imshow(CONTROLS_WINDOW, controls.draw(image_area, clicked_hsv))
-        cv2.imshow(VIEW_WINDOW, build_view(result, mask, s, len(boxes), clicks.clicked))
+        cv2.imshow(CONTROLS_WINDOW, controls.draw(image_area, clicked_hsv, tap_mode))
+        cv2.imshow(VIEW_WINDOW, build_view(result, mask, s, len(boxes), clicks.clicked, tap_mode))
  
         raw = cv2.waitKeyEx(30)             # full key code, needed for the arrow keys
         if raw in KEYS_UP:
@@ -514,20 +602,28 @@ def main():
             controls.nudge(-1 if key == ord("a") else +1)
         elif key in (ord("A"), ord("D")):
             controls.nudge(-10 if key == ord("A") else +10)
+        elif key == ord("t"):
+            tap_mode = not tap_mode
+            print("Tap mode", "ON: click one hold" if tap_mode else "OFF")
+        elif key in (ord("["), ord("]")) and tap_mode and last_tap:
+            h_tol = max(1, min(89, h_tol + (-2 if key == ord("[") else 2)))
+            apply_tap()
         elif key == ord("r"):
             controls.reset()
         elif key == ord("p"):
             max_text = "none" if s["max_area"] is None else str(round(s["max_area"]))
+            method = f"tap-to-sample (hue +/-{h_tol})" if controls.source == "tap" else "manual"
             print(f"lower={lower} upper={upper} kernel={s['kernel']} "
                   f"min_area={s['min_area']:.0f}px max_area={max_text} -> {len(boxes)} holds")
             row = (f"{path.stem},COLOUR,{lower[0]},{upper[0]},{lower[1]},{lower[2]},"
-                   f"{s['kernel']},{round(s['min_area'])},{max_text},,,,,")
+                   f"{s['kernel']},{round(s['min_area'])},{max_text},,,,,{method}")
             print("CSV row:")
             print(row)
         elif key == ord("s"):
             RESULTS_DIR.mkdir(exist_ok=True)
-            cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_result.jpg"), result)
-            cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_mask.jpg"), mask)
+            tag = "tap" if controls.source == "tap" else "manual"
+            cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_{tag}_result.jpg"), result)
+            cv2.imwrite(str(RESULTS_DIR / f"{path.stem}_{tag}_mask.jpg"), mask)
             print(f"Saved to {RESULTS_DIR}")
  
         # Stop if either window was closed with the X button
@@ -539,4 +635,4 @@ def main():
  
 if __name__ == "__main__":
     main()
- 
+
