@@ -13,8 +13,10 @@ still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detect
 2026-10-01_suas_lime_greentag_topped_f00024,Lime,23,43,34,40,5,176,none,7,7,0,0,tap-to-sample (hue +/-10), Got all holds instantly clicking any hold did not matter small footholds not showing up but they are too small to notice
 2026-10-01_suas_green_blacktag_fell_2_f00021,Green,45,65,0,7,7,35,176,9,8,1,2,tap-to-sample (hue +/-10), missed a few holds and was detecting spots on the wall as holds
 2026-10-01_suas_darkblue_greentag_topped_f00009,Dark Blue,100,120,26,47,7,35,none,10,6,4,0,tap-to-sample (hue +/-10), I adjusted the kernel and min size as I may have set wrong in first test but was able to detect more holds then before but still missing some key holds
-
-
+2026-10-01_suas_orange_greentag_fell_f00019,Orange,174,14,18,87,0,18,706,21,19,2,11,tap-to-sample (hue +/-10),Got the same holds but is hard to disceren the really tiny holds or similar red ones
+2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,17,37,65,41,7,53,none,18,18,0,5,tap-to-sample (hue +/-10),Got all colours again but had to choose a specific hold to get it also picks up other climbs hold that are yellow
+2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,35,55,39,60,3,18,529,6,6,0,2,tap-to-sample (hue +/-10),Got all holds but also included some of the walls in the corners
+2026-10-01_suas_pink_blacktag,Pink,162,2,58,95,5,71,none,13,13,0,1,tap-to-sample (hue +/-10),Got all the holds but included the lighter part of a red hole aswell
 
 
 
