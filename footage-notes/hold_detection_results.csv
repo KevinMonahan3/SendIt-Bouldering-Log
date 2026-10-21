@@ -17,6 +17,11 @@ still,colour,h_low,h_high,s_low,v_low,kernel,min_area,max_area,true_holds,detect
 2026-10-01_suas_yellow_bluetag_topped_f00023,Yellow,17,37,65,41,7,53,none,18,18,0,5,tap-to-sample (hue +/-10),Got all colours again but had to choose a specific hold to get it also picks up other climbs hold that are yellow
 2026-10-01_suas_lightgreen_goldtag_topped_f00015,Light Green,35,55,39,60,3,18,529,6,6,0,2,tap-to-sample (hue +/-10),Got all holds but also included some of the walls in the corners
 2026-10-01_suas_pink_blacktag,Pink,162,2,58,95,5,71,none,13,13,0,1,tap-to-sample (hue +/-10),Got all the holds but included the lighter part of a red hole aswell
+2026-10-01_suas_red_greentag_fell_f00025,Red,0,20,0,32,3,0,176,19,19,0,8,tap-to-sample (hue +/-10),Got darker holds in the cave as red aswell as other holds nearby
+2026-10-01_suas_purple_greentag_fell_f01168,Purple,141,165,42,0,0,0,none,24,12,12,1,tap-to-sample (hue +/-12),struggled finding the smaller holds in the cave as well as marking 1 hold as 2 (could improve with multple holds selected)
+2026-10-01_suas_white_goldtag_fell_2_f00013,White,63,87,0,53,0,18,176,15,4,11,34,tap-to-sample (hue +/-12),struggle with white holds in general on white and green background holds blend in to well not even picking them up
+2026-10-01_suas_yellow_blacktag_topped_f00015,Yellow,23,43,94,21,5,0,176,18,18,0,2,tap-to-sample (hue +/-10), picked up some colours far to the side changed kernel size as well to help it
+
 
 
 
