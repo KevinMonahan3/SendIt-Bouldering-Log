@@ -26,6 +26,7 @@ android/key.properties
 *.env
 **/secrets.dart
 **/supabase_config.dart
+*.task
 
 # ----- Test footage and large media -----
 footage/
@@ -34,6 +35,7 @@ footage/
 *.mov
 *.MOV
 *.avi
+*.pptx
 
 # ----- Editor and OS junk -----
 .vscode/
