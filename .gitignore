@@ -35,6 +35,7 @@ footage/
 *.mov
 *.MOV
 *.avi
+*.pptx
 
 # ----- Editor and OS junk -----
 .vscode/
